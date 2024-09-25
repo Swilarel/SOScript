@@ -46,14 +46,10 @@ def get_roi(frame, height_ratio=0.25, width_ratio=0.25, grayscale=True):
     roi = frame[int(height * (1 - height_ratio)):height, 0:int(width * width_ratio)]
     return roi
 
-def compute_baseline_and_detect_start(cap, num_baseline_frames=10, threshold=30, match_ratio=0.5, progress_callback=None):
+def compute_baseline_and_detect_start(cap, num_baseline_frames=10, threshold=30, match_ratio=0.5, max_duration=60, progress_callback=None):
     """
     Computes the baseline from the first few frames and detects the start time
     where the reaction begins based on ROI differences.
-
-    Returns:
-        start_time (float): The timestamp in seconds where the reaction starts.
-                             Returns None if not found.
     """
     baselines = []
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -84,6 +80,10 @@ def compute_baseline_and_detect_start(cap, num_baseline_frames=10, threshold=30,
             start_time = frame_count / fps
             return start_time
         frame_count += 1
+        # Check if the elapsed time exceeds max_duration
+        elapsed_time = frame_count / fps
+        if elapsed_time > max_duration:
+            return None  # Exceeded maximum duration without detecting reaction start
         if progress_callback:
             progress_callback((frame_count) / total_frames)
 
@@ -105,7 +105,6 @@ def get_video_duration(video_path):
 def trim_video_ffmpeg(input_path, output_path, start_time, progress_callback=None):
     """
     Trims the video starting from the specified start_time using ffmpeg.
-    This method is faster than using MoviePy.
     """
     ffmpeg_command = [
         FFMPEG_PATH,
@@ -224,7 +223,7 @@ def merge_videos_ffmpeg(main_video_path, synced_reaction_path, output_path, prog
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg error: {e.stderr}")
 
-def synchronize_videos(reaction_video_path, synced_reaction_path, num_baseline_frames=10, threshold=30, match_ratio=0.5, progress_callback=None):
+def synchronize_videos(reaction_video_path, synced_reaction_path, num_baseline_frames=10, threshold=30, match_ratio=0.5, max_duration=60, progress_callback=None):
     """
     Synchronizes the reaction video by trimming it based on detected preview start.
     """
@@ -238,6 +237,7 @@ def synchronize_videos(reaction_video_path, synced_reaction_path, num_baseline_f
             num_baseline_frames=num_baseline_frames,
             threshold=threshold,
             match_ratio=match_ratio,
+            max_duration=max_duration,  # Pass the maximum duration
             progress_callback=progress_callback
         )
     finally:
@@ -246,6 +246,7 @@ def synchronize_videos(reaction_video_path, synced_reaction_path, num_baseline_f
     if start_time is not None:
         trim_video_ffmpeg(reaction_video_path, synced_reaction_path, start_time, progress_callback)
     else:
+        # Raise the specific error message when reaction start is not detected within max_duration
         raise ValueError("Reaction start not detected in the reaction video.")
 
 def delete_file(file_path):
@@ -409,6 +410,7 @@ class VideoSyncMergerApp:
                 num_baseline_frames=10,
                 threshold=30,
                 match_ratio=0.5,
+                max_duration=60,  # Set maximum duration to 60 seconds
                 progress_callback=lambda x: None  # No progress updates for synchronization
             )
 
@@ -462,7 +464,7 @@ class VideoSyncMergerApp:
     def update_encoder_info(self, encoder_description):
         self.master.after(0, lambda: self.encoder_label.config(text=f"Encoder: {encoder_description}"))
         if 'libx264' in encoder_description.lower():
-            self.master.after(0, lambda: self.disclaimer_label.config(text="You do not have an NVIDIA GPU, so the encoding will be much slower"))
+            self.master.after(0, lambda: self.disclaimer_label.config(text="You do not have an Nvidia GPU, so the encoding will be much slower"))
         else:
             self.master.after(0, lambda: self.disclaimer_label.config(text=""))
 
