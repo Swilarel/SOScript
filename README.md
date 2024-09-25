@@ -5,5 +5,7 @@ A preview of the program (graphic design is my passion):
 <img width="388" alt="Screenshot 2024-09-25 152749" src="https://github.com/user-attachments/assets/e34a9470-b8e0-4db5-8536-160a21e7f812">
 
 Planned features:
+
 Auto audio level matching
+
 Support for soft subs
