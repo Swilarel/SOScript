@@ -1,12 +1,39 @@
+import sys
+import os
 import cv2
 import numpy as np
 import subprocess
-import os
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
 import re
+
+def run_subprocess(command):
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
+    else:
+        creationflags = 0  # No special flags for other OSes
+
+    return subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        creationflags=creationflags
+    )
+
+def get_ffmpeg_path():
+    if getattr(sys, 'frozen', False):
+        # If the application is run as a bundle, the path is in _MEIPASS
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    ffmpeg_path = os.path.join(base_path, 'ffmpeg.exe')
+    return ffmpeg_path
+
+FFMPEG_PATH = get_ffmpeg_path()
 
 def get_roi(frame, height_ratio=0.25, width_ratio=0.25, grayscale=True):
     """
@@ -81,7 +108,7 @@ def trim_video_ffmpeg(input_path, output_path, start_time, progress_callback=Non
     This method is faster than using MoviePy.
     """
     ffmpeg_command = [
-        'ffmpeg',
+        FFMPEG_PATH,
         '-y',  # Overwrite output files without asking
         '-ss', str(start_time),
         '-i', input_path,
@@ -90,13 +117,12 @@ def trim_video_ffmpeg(input_path, output_path, start_time, progress_callback=Non
     ]
 
     try:
-        process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        process = run_subprocess(ffmpeg_command)
         while True:
             output = process.stderr.readline()
             if output == '' and process.poll() is not None:
                 break
             if output:
-                # Optionally, parse ffmpeg progress here
                 pass
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, ffmpeg_command)
@@ -108,13 +134,13 @@ def is_ffmpeg_encoder_available(encoder_name):
     Checks if the specified FFmpeg encoder is available.
     """
     try:
-        result = subprocess.run(
-            ['ffmpeg', '-encoders'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
-        )
-        encoders = result.stdout.lower()
+        ffmpeg_encoders_command = [
+            FFMPEG_PATH,
+            '-encoders'
+        ]
+        process = run_subprocess(ffmpeg_encoders_command)
+        stdout, _ = process.communicate()
+        encoders = stdout.lower()
         return encoder_name.lower() in encoders
     except Exception as e:
         print(f"Error checking FFmpeg encoders: {e}")
@@ -151,12 +177,12 @@ def merge_videos_ffmpeg(main_video_path, synced_reaction_path, output_path, prog
         encoder_callback(encoder_description)
 
     ffmpeg_command = [
-        'ffmpeg',
+        FFMPEG_PATH,
         '-y',  # Overwrite output files without asking
         '-i', main_video_path,
         '-i', synced_reaction_path,
         '-filter_complex',
-        "[1:a]volume=1.5[a1];"  # Increase volume of reaction audio
+        "[1:a]volume=1.5[a1];"  # Increase volume of reaction audio, may add auto matching in the future
         "[0:v][1:v]hstack=inputs=2[v];"  # Stack videos side by side
         "[0:a][a1]amix=inputs=2[a]",  # Mix audio streams
         '-map', '[v]',
@@ -171,13 +197,12 @@ def merge_videos_ffmpeg(main_video_path, synced_reaction_path, output_path, prog
 
     # Adjust preset for libx264 if necessary
     if video_codec == 'libx264':
-        # Optionally, add more libx264 specific settings
         pass
 
     time_pattern = re.compile(r'time=(\d+):(\d+):(\d+\.\d+)')
 
     try:
-        process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        process = run_subprocess(ffmpeg_command)
 
         while True:
             output = process.stderr.readline()
@@ -238,7 +263,7 @@ class VideoSyncMergerApp:
     def __init__(self, master):
         self.master = master
         master.title("SOScript")
-        master.geometry("525x400")  # Increased height to accommodate new labels
+        master.geometry("525x400")
         master.resizable(False, False)
 
         # Initialize variables
@@ -437,7 +462,7 @@ class VideoSyncMergerApp:
     def update_encoder_info(self, encoder_description):
         self.master.after(0, lambda: self.encoder_label.config(text=f"Encoder: {encoder_description}"))
         if 'libx264' in encoder_description.lower():
-            self.master.after(0, lambda: self.disclaimer_label.config(text="You do not have an NVIDIA gpu so the encoding will be much slower"))
+            self.master.after(0, lambda: self.disclaimer_label.config(text="You do not have an NVIDIA GPU, so the encoding will be much slower"))
         else:
             self.master.after(0, lambda: self.disclaimer_label.config(text=""))
 
