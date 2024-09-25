@@ -9,3 +9,5 @@ Planned features:
 Auto audio level matching
 
 Support for soft subs
+
+Fix Jacob's shirt ruining everything
